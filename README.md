@@ -1,4 +1,4 @@
-## Rust - CUDA 光线追踪器
+# Rust - CUDA 光线追踪器
 
 ### 概述
 本项目为一个简单的光线追踪器，支持场景构建以及图片渲染。本项目的主体部分使用 Rust 语言实现，内置了球体、平行四边形和三角形等几何体，并实现了哑光、金属、透射、发光和烟雾材质，以及纯色、棋盘、图片、Perlin 噪声等多种纹理。
@@ -31,6 +31,7 @@ powershell
 
 ### 参考文献
 [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
+
 [_Ray Tracing: The Next Week_](https://raytracing.github.io/books/RayTracingTheNextWeek.html)
 
 本仓库作者：2025 级 ACM 班 赵睿城
