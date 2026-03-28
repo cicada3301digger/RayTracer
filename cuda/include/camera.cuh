@@ -133,13 +133,13 @@ struct Camera {
     }
 
     __device__
-    bool hit_world_linear(const Ray& ray, HittableList *hittables, HitRecord& out_record) const {
+    bool hit_world_linear(const Ray& ray, HittableList *hittables, HitRecord& out_record, curandState* rand_state) const {
         bool any_hit = false;
         float closest = FLT_MAX;
         HitRecord temp;
 
         for (int i = 0; i < hittables->count; ++i) {
-            if (hittables->hit(i, ray, Interval(0.001f, closest), temp)) {
+            if (hittables->hit(i, ray, Interval(0.001f, closest), temp, rand_state)) {
                 any_hit = true;
                 closest = temp.t;
                 out_record = temp;
@@ -158,8 +158,8 @@ struct Camera {
         for (int bounce = depth; bounce < max_depth; ++bounce) {
             HitRecord rec;
             bool hit_any = use_bvh
-                ? bvh->hit(current_ray, Interval(0.001f, FLT_MAX), rec)
-                : hit_world_linear(current_ray, bvh->hittables, rec);
+                ? bvh->hit(current_ray, Interval(0.001f, FLT_MAX), rec, rand_state)
+                : hit_world_linear(current_ray, bvh->hittables, rec, rand_state);
 
             if (!hit_any) {
                 radiance += throughput.hadamard_product(background);
