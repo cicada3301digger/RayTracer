@@ -9,7 +9,9 @@
 本仓库的 Rust 代码存放在 `src` 文件夹下，CUDA 代码存放在 `cuda` 文件夹下，渲染出的成品图片存放在 `images` 文件夹下。本项目的 Rust 既可以渲染，又可以充当场景构建的前端，而 CUDA 可以作为渲染后端。前、后端基于 IR 做到了解耦。具体地，`src/export_ir.rs` 实现了把场景输出为 IR 文件，而 `cuda/include/parser.cuh` 则可以解析 IR 并转化为 CUDA 端的内部表示。有关 IR 的具体内容，请参考 `docs/cuda_ir.md` 和 `docs/ir_usage.md`。
 
 ### 构建方法
-本仓库的 Rust 端和 CUDA 端构建分离。Rust 端是跨平台的，要求安装了 `rustup` 和 `cargo`。可以直接在仓库根目录下执行 `cargo build --release`来构建。CUDA 端要求为 Windows 或 WSL 环境，且电脑配备有 NVIDIA 系列显卡并安装有最新驱动。此外，还需要 `gcc` `cmake` 和 `nvcc` 环境。需要注意的是， WSL 端由于显卡虚拟化的原因，高强度渲染时可能出现严重问题（甚至可能导致电脑蓝屏崩溃）。强烈不建议使用 WSL 环境渲染超过 `100,000` 像素或每像素取样超过 `500` 的图像！建议使用 Windows 原生环境。可以在 `cuda/` 路径下运行 CMake 来构建。
+本仓库的 Rust 端和 CUDA 端构建分离。Rust 端是跨平台的，要求安装了 `rustup` 和 `cargo`。可以直接在仓库根目录下执行 `cargo build --release`来构建。CUDA 端要求为 Windows 或 WSL 环境，且电脑配备有 NVIDIA 系列显卡并安装有最新驱动。此外，还需要 `gcc` `cmake` 和 `nvcc` 环境。
+
+为了避免显存溢出，当前固定分块渲染，块边长最大为 256 像素。这一修复完全避免了显存溢出到内存上所带来的内存虚拟化错误。
 
 如需使用 CUDA 渲染，首先需要场景 IR 文件（`.ir`，可通过 Rust 端构建获得）和相机配置文件（`.cfg`）。你可以运行 `gpu_render.exe` 可执行文件并使用命令行参数传入 IR 文件路径、输出路径和相机配置文件来渲染。
 
@@ -35,4 +37,4 @@ powershell
 [_Ray Tracing: The Next Week_](https://raytracing.github.io/books/RayTracingTheNextWeek.html)
 
 本仓库作者：2025 级 ACM 班 赵睿城
-文档更新时间：2026·3·27
+文档更新时间：2026·3·28

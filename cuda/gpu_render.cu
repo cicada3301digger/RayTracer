@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -556,9 +557,60 @@ static DeviceScene build_device_scene(const ParsedIR& ir) {
     return ds;
 }
 
+static size_t estimate_scene_device_bytes(const ParsedIR& ir) {
+    const size_t tex_count = ir.textures.size();
+    const size_t mat_count = ir.materials.size();
+    const size_t hit_count = ir.hittables.size();
+    const size_t bvh_count = ir.bvh.size();
+
+    size_t bytes = 0;
+
+    bytes += sizeof(Vec3) * tex_count * 3;
+    bytes += sizeof(float) * tex_count;
+    bytes += sizeof(int) * tex_count;
+    bytes += sizeof(TextureType) * tex_count;
+    bytes += sizeof(TextureList);
+
+    bytes += sizeof(int) * mat_count;
+    bytes += sizeof(Vec3) * mat_count;
+    bytes += sizeof(float) * mat_count * 2;
+    bytes += sizeof(MaterialType) * mat_count;
+    bytes += sizeof(MaterialList);
+
+    bytes += sizeof(Vec3) * hit_count * 6;
+    bytes += sizeof(float) * hit_count;
+    bytes += sizeof(int) * hit_count * 2;
+    bytes += sizeof(HittableType) * hit_count;
+    bytes += sizeof(HittableList);
+
+    bytes += sizeof(int) * bvh_count * 3;
+    bytes += sizeof(AABB) * bvh_count;
+    bytes += sizeof(bool) * bvh_count;
+    bytes += sizeof(BVH);
+
+    return bytes;
+}
+
+static void print_device_memory_usage(const char* tag) {
+    size_t free_mem = 0;
+    size_t total_mem = 0;
+    CUDA_CHECK(cudaMemGetInfo(&free_mem, &total_mem));
+
+    const size_t used_mem = total_mem - free_mem;
+    const double used_ratio = total_mem == 0 ? 0.0 : static_cast<double>(used_mem) / static_cast<double>(total_mem);
+    const double free_ratio = 1.0 - used_ratio;
+
+    std::cerr << std::fixed << std::setprecision(2)
+              << "[" << tag << "] VRAM used=" << (used_mem / (1024.0 * 1024.0)) << " MiB"
+              << " (" << (used_ratio * 100.0) << "%), free=" << (free_mem / (1024.0 * 1024.0)) << " MiB"
+              << " (" << (free_ratio * 100.0) << "%), total=" << (total_mem / (1024.0 * 1024.0)) << " MiB"
+              << std::endl;
+}
+
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cerr << "usage: gpu_render <ir_path> <output_ppm_path> <camera_cfg_path>" << std::endl;
+    const bool build_only = (argc == 5 && std::string(argv[4]) == "--build-only");
+    if (!(argc == 4 || build_only)) {
+        std::cerr << "usage: gpu_render <ir_path> <output_ppm_path> <camera_cfg_path> [--build-only]" << std::endl;
         return 2;
     }
 
@@ -566,8 +618,15 @@ int main(int argc, char** argv) {
     const std::string output_path = argv[2];
     const std::string camera_cfg_path = argv[3];
 
-    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, 256 * 1024));
+    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, 32 * 1024));
     CUDA_CHECK(cudaDeviceSetLimit(cudaLimitMallocHeapSize, 64 * 1024 * 1024));
+    size_t configured_stack_size = 0;
+    size_t configured_heap_size = 0;
+    CUDA_CHECK(cudaDeviceGetLimit(&configured_stack_size, cudaLimitStackSize));
+    CUDA_CHECK(cudaDeviceGetLimit(&configured_heap_size, cudaLimitMallocHeapSize));
+    std::cerr << "CUDA limits: stack=" << configured_stack_size
+              << " bytes, malloc_heap=" << configured_heap_size << " bytes" << std::endl;
+    print_device_memory_usage("startup");
 
     std::cerr << "Loading IR from: " << ir_path << std::endl;
 
@@ -591,24 +650,38 @@ int main(int argc, char** argv) {
 
     std::cerr << "Camera config loaded successfully." << std::endl;
 
-    FILE* output = std::fopen(output_path.c_str(), "w");
-    if (!output) {
-        std::cerr << "failed to open output file: " << output_path << std::endl;
-        return 1;
-    }
-
     std::cerr << "Building device scene..." << std::endl;
+    print_device_memory_usage("before-scene-build");
 
     DeviceScene ds;
     try {
         ds = build_device_scene(ir);
     } catch (const std::exception& ex) {
-        std::fclose(output);
         std::cerr << "build_device_scene failed: " << ex.what() << std::endl;
         return 1;
     }
 
     std::cerr << "Device scene built successfully." << std::endl;
+    const size_t estimated_scene_bytes = estimate_scene_device_bytes(ir);
+    std::cerr << std::fixed << std::setprecision(2)
+              << "[scene-estimate] Device allocations ~= "
+              << (estimated_scene_bytes / (1024.0 * 1024.0)) << " MiB" << std::endl;
+    print_device_memory_usage("after-scene-build");
+
+    if (build_only) {
+        std::cerr << "Build-only mode enabled: skipping render." << std::endl;
+        free_device_scene(ds);
+        CUDA_CHECK(cudaDeviceSynchronize());
+        print_device_memory_usage("after-scene-free");
+        return 0;
+    }
+
+    FILE* output = std::fopen(output_path.c_str(), "w");
+    if (!output) {
+        std::cerr << "failed to open output file: " << output_path << std::endl;
+        free_device_scene(ds);
+        return 1;
+    }
 
     const int image_height = std::max(1, static_cast<int>(cfg.image_width / cfg.aspect_ratio));
 
@@ -635,6 +708,7 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaDeviceSynchronize());
 
     free_device_scene(ds);
+    print_device_memory_usage("after-scene-free");
     std::fclose(output);
 
     return 0;
